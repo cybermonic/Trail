@@ -56,7 +56,16 @@ This is a zipped directory containing the knowledge graph we used for all of our
 
 ## Top-level `src/` files
 
-The `src/` directory contains files on the top level to train, evaluate, and explain our models. The `ml_event_cls.py` file trains and evaluates the traditional ML models to classify full events. The `lprop.py` model evaluates label propagation at 1-10 levels. The `train_gnn.py` file trains and evaluates models on each of the k-fold splits for the dataset. Finally, the `explain.py` file runs GNNExplainer on pretrained GNN models to produce an explaination subgraph. All
 
 <img src="./img/ways_of_predicting.png" style="background-color:white;">
 <h3 align="center">Figure 1: Ways of analyzing the TRAIL Knowledge Graph</h3>
+
+The `src/` directory contains files on the top level to train, evaluate, and explain our models. The `ml_event_cls.py` file trains and evaluates the traditional ML models to classify full events. The `lprop.py` model evaluates label propagation at 1-10 levels. The `train_gnn.py` file trains and evaluates models on each of the k-fold splits for the dataset. Finally, the `explain.py` file runs GNNExplainer on pretrained GNN models to produce an explaination subgraph.
+
+
+## src/models/
+
+<img src="./img/IOC_GNN-arch.png" style="background-color:white;">
+<h3 align="center">Figure 2: GNN model archetecture</h3>
+
+This directory contains the source code for the GNN and the autoencoder. The GNN model takes the TKG and directory containing the CSV files as input, and outputs predictions for events when given their node IDs.
