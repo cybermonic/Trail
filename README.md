@@ -42,7 +42,7 @@ The relevant files in this repository are listed below. In this section we will 
 ## TKG.zip
 This is a zipped directory containing the knowledge graph we used for all of our main experiments. It contains 3 CSV files, holding vectorized features for each IOC. The values of these features (particularly the one-hot features) correlate to values found in the CSVs and .txt files in the `src/feature_extraction/helper_files/` directory. For more information on how these features were derived, please see the subsection on the `src/feature_extraction/` directory. The `full_graph_csr.pt` file contains a PyTorch Geometric Data object that represents the graph. This data object has the following relevant fields:
 
-<h3 style='align="center";'>Table 1: Values in the graph datastructure</h3>
+<h3 align="center">Table 1: Values in the graph datastructure</h3>
 
 | Key         | Description                                                                                                                                        |
 |-------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -54,6 +54,9 @@ This is a zipped directory containing the knowledge graph we used for all of our
 | `y`         | The label of every node in the `event_ids` field                                                                                                   |
 | `label_map` | An int to str dictionary mapping the values in `y` to human-readable strings. E.g., `label_map[0] == "APT28"`.                                     |
 
-## Method
+## Top-level `src/` files
+
+The `src/` directory contains files on the top level to train, evaluate, and explain our models. The `ml_event_cls.py` file trains and evaluates the traditional ML models to classify full events. The `lprop.py` model evaluates label propagation at 1-10 levels. The `train_gnn.py` file trains and evaluates models on each of the k-fold splits for the dataset. Finally, the `explain.py` file runs GNNExplainer on pretrained GNN models to produce an explaination subgraph. All
 
 <img src="./img/ways_of_predicting.png" style="background-color:white;">
+<h3 align="center">Figure 1: Ways of analyzing the TRAIL Knowledge Graph</h3>
