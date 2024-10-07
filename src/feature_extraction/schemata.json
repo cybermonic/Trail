@@ -1,0 +1,39 @@
+{
+    "domain": {
+        "ioc": "string representation of IOC. E.g. 'evil.com'",
+        "dns_records": [
+            {
+                "address": "record of where domain resolves to. IP, domain name, or 'NXDOMAIN'",
+                "first": "firstseen date formatted in a way dateutil.parser can parse",
+                "last": "lastseen date (same as above)",
+                "record_type": "Kind of DNS record. E.g. any of the following: ['A', 'AAAA', 'NS', 'CNAME', 'SOA', 'MX', 'TXT', 'PTR', 'DNAME']"
+            }
+        ]
+    }, 
+    "URL": {
+        "ioc": "string representation of IOC. E.g. 'http://www.evil.com/bad_file.html'",
+        "hostname": "domain of URL (the bit between the http:// and the TLD)",
+        "ip": "IP the URL is hosted on if available",
+        "filetype": "e.g. file/js, file/html, etc.. Uses one-hot label encoder trained on all OTX data so unseen labels are okay, will be parsed as null values if unseen.",
+        "fileclass": "The encoding used for the file hosted at the URL if applicable. E.g. 'ELF', 'BAT', 'HTML'. Again, uses label encoder and will return null if unseen", 
+        "http_code": "Response code given by URL when accessed. E.g. 200, 404, etc.. Formatted as a string", 
+        "encoding": "Encoding used for website body. E.g. utf-8, html, gzip. Uses pretrained one-hot label encoder.",
+        "server": "Header on server. Usually formatted [ServerSoftware]/[version] ([OS]) [[Service]/[Version], ...]. E.g. 'Microsoft-IIS/8.5', 'Apache/2.4.10 (Win32) OpenSSL/1.0.1i PHP/5.6.3', 'Apache Phusion_Passenger/4.0.10 mod_bwlimited/1.4'",
+        "expiration": "When the URL (domain name?) expires. Formatted as a date dateutil.parse can understand"
+    },
+    "IP": {
+        "ioc": "string representation of IOC. E.g. '129.0.0.1'",
+        "country_code": "2 or 3 character string denoting IP host country. E.g. USA, RU, UK",
+        "asn": "combination of asn number, and issuing body separated by a space. E.g. 'ASN0001 ip provider llc'",
+        "latitude": "self explanitory",
+        "longitude": "ditto",
+        "resolves_to": [
+            {
+                "host": "record of where domain resolves to. IP, domain name, or 'NXDOMAIN'",
+                "first": "firstseen date formatted in a way dateutil.parser can parse",
+                "last": "lastseen date (same as above)",
+                "record_type": "Kind of DNS record. E.g. any of the following: ['A', 'AAAA', 'NS', 'CNAME', 'SOA', 'MX', 'TXT', 'PTR', 'DNAME']"
+            }
+        ]
+    }
+}
