@@ -1,5 +1,5 @@
 """
-This module is used to train classifers on our misp data.
+This module is used to train classifers 
 """
 import json
 
@@ -11,12 +11,12 @@ from hyperopt import fmin, hp, STATUS_OK, tpe, Trials
 from sklearn.metrics import (accuracy_score, balanced_accuracy_score, precision_score, recall_score, f1_score,
                              roc_auc_score)
 from typing import Dict
-from config import config
 from pathlib import Path
 from sklearn.preprocessing import LabelEncoder
-from greyhound_graph.feature_extraction.utils import get_label_mapper
+from build_dataset.label_mapper.apt_label_mapper import build_ta_map as get_label_mapper
 import warnings
 from sklearn.exceptions import UndefinedMetricWarning
+from config import config 
 
 # Ignore the specific sklearn UndefinedMetricWarning
 warnings.filterwarnings("ignore", category=UndefinedMetricWarning)

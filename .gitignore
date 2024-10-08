@@ -1,2 +1,7 @@
 __pycache__
-otx_dataset/ # Unzipped TKG
+
+# Unzipped TKG
+otx_dataset/ 
+
+# Unzipped ML_DATA.zip
+trad_ml_preprocessed/ 

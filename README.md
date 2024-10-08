@@ -24,6 +24,10 @@ The relevant files in this repository are listed below. In this section we will 
 │   ├── ips.csv
 │   ├── urls.csv
 │   └── full_graph_csr.pt
+|── ML_DATA.zip/
+│   ├──*_x.npy
+│   ├──*_y.npy
+│   ├──kfolds.json
 └── src/
     ├── ml_event_cls.py
     ├── lprop.py
@@ -54,6 +58,9 @@ This is a zipped directory containing the knowledge graph we used for all of our
 | `y`         | The label of every node in the `event_ids` field                                                                                                   |
 | `label_map` | An int to str dictionary mapping the values in `y` to human-readable strings. E.g., `label_map[0] == "APT28"`.                                     |
 
+## ML_DATA.zip 
+Preprocessed files built from the TKG representing nodes only as feature vectors, with labels when they appear in events with only a single threat actor. Contains the files `domain_x.npy`, `url_x.npy`, and `ip_x.npy` with rows in the same order as the CSV files in `TKG.zip` with corresponding `domain_y.npy`, `url_y.npy`, and `ip_y.npy` files containing either labels or a -1 if the IOC has appeared in events attributed to different threat actors. There is also a json file called `kfolds.json` with the training folds we used.
+
 ## Top-level `src/` files
 
 
@@ -68,4 +75,4 @@ The `src/` directory contains files on the top level to train, evaluate, and exp
 <img src="./img/IOC_GNN-arch.png" style="background-color:white;">
 <h3 align="center">Figure 2: GNN model archetecture</h3>
 
-This directory contains the source code for the GNN and the autoencoder. The GNN model takes the TKG and directory containing the CSV files as input, and outputs predictions for events when given their node IDs.
+This directory contains the source code for the GNN, the autoencoder, and the IOC DNN. The GNN model takes the TKG and directory containing the CSV files as input, and outputs predictions for events when given their node IDs. The IOC DNN uses the dense matrices stored in `ML_DATA.zip`.
