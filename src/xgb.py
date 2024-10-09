@@ -10,6 +10,7 @@ from sklearn.utils.class_weight import compute_sample_weight, compute_class_weig
 from hyperopt import fmin, hp, STATUS_OK, tpe, Trials
 from sklearn.metrics import (accuracy_score, balanced_accuracy_score, precision_score, recall_score, f1_score,
                              roc_auc_score)
+from sklearn.model_selection import train_test_split
 from typing import Dict
 from pathlib import Path
 from sklearn.preprocessing import LabelEncoder
@@ -45,70 +46,54 @@ class Classifier:
 
 
 class XGBoostGPUClassifierAPT(Classifier):
+    class XGBoostGPUClassifierAPT(Classifier):
 
-    def __init__(self,
-                 config: Dict,
-                 ioc_type: str,
-                 model_definition: str,
-                 model_title: str = 'APT_XGBoost'):
-        super().__init__(config=config,
-                         model_title=model_title,
-                         ioc_type=ioc_type,
-                         model_definition=model_definition)
-        # During the optimization stage, we will keep track of the self.best_metric (We can choose this) and save the
-        # self.best_model with title self.model_title
-        self.best_metric = 0
-        self.best_model = None
-        # Load in datasets
-        ml_dir = Path(config.get('ML_DATA'))
-        if ioc_type == 'domains':
-            self.X_train = pd.read_csv(ml_dir / 'domains_features_train.csv', index_col='Unnamed: 0')
-            self.y_train = pd.read_csv(ml_dir / 'domains_labels_train.csv', index_col='Unnamed: 0')
+        def __init__(self,
+                     config: Dict,
+                     ioc_type: str,
+                     model_definition: str,
+                     model_title: str = 'APT_XGBoost'):
+            super().__init__(config=config,
+                             model_title=model_title,
+                             ioc_type=ioc_type,
+                             model_definition=model_definition)
+            # During the optimization stage, we will keep track of the self.best_metric (We can choose this) and save the
+            # self.best_model with title self.model_title
+            self.best_metric = 0
+            self.best_model = None
+            # Load in datasets
+            ml_dir = Path(config.get('ML_DATA'))
 
-            self.X_test = pd.read_csv(ml_dir / 'domains_features_test.csv', index_col='Unnamed: 0')
-            self.y_test = pd.read_csv(ml_dir / 'domains_labels_test.csv', index_col='Unnamed: 0')
+            # This is where we will load in the train/test/val data. This can differ from user to user
+            if ioc_type == 'domains':
+                self.X_train = pd.read_csv(ml_dir / 'domains_features_train.csv', index_col='Unnamed: 0')
+                self.y_train = pd.read_csv(ml_dir / 'domains_labels_train.csv', index_col='Unnamed: 0')
 
-            self.X_val = pd.read_csv(ml_dir / 'domains_features_val.csv', index_col='Unnamed: 0')
-            self.y_val = pd.read_csv(ml_dir / 'domains_labels_val.csv', index_col='Unnamed: 0')
+                self.X_test = pd.read_csv(ml_dir / 'domains_features_test.csv', index_col='Unnamed: 0')
+                self.y_test = pd.read_csv(ml_dir / 'domains_labels_test.csv', index_col='Unnamed: 0')
 
-    def process_data(self,
-                     select_classes: list = []) -> None:
-        """
-        Here we will process the data how we want to. We do this beacuse we might not want to train on all classes.
-        For example in a sequential model we might want to train on only some classes.
-        """
-        if select_classes:
-            # Load in mapper
-            apt_map = get_label_mapper()
-            # Glue the features and labels together. SInce we need to proceees this
-            train = pd.concat([self.X_train, self.y_train], axis=1)
-            test = pd.concat([self.X_test, self.y_test], axis=1)
-            val = pd.concat([self.X_val, self.y_val], axis=1)
-            # Make human readable labels
-            train['label'] = train['0'].astype(str).map(apt_map)
-            test['label'] = test['0'].astype(str).map(apt_map)
-            val['label'] = val['0'].astype(str).map(apt_map)
-            # Now filter DataFrame by classes in select_classes
-            train_filtered = train[train['label'].isin(select_classes)]
-            test_filtered = test[test['label'].isin(select_classes)]
-            val_filtered = val[val['label'].isin(select_classes)]
-            # Now split it up again
-            self.X_train = train_filtered.drop(columns=['0', 'label']).to_numpy()
-            self.X_test = test_filtered.drop(columns=['0', 'label']).to_numpy()
-            self.X_val = val_filtered.drop(columns=['0', 'label']).to_numpy()
+                self.X_val = pd.read_csv(ml_dir / 'domains_features_val.csv', index_col='Unnamed: 0')
+                self.y_val = pd.read_csv(ml_dir / 'domains_labels_val.csv', index_col='Unnamed: 0')
 
-            self.y_train = train_filtered['0'].to_numpy()
-            self.y_test = test_filtered['0'].to_numpy()
-            self.y_val = val_filtered['0'].to_numpy()
+            if ioc_type == 'ips':
+                ip_data = np.load(ml_dir / 'ips.npz')
+                X = ip_data['x']
+                y = ip_data['y']
 
-            # Encode this.
-            label_encoder = LabelEncoder()
-            self.y_train = label_encoder.fit_transform(self.y_train)
-            self.y_test = label_encoder.transform(self.y_test)
-            self.y_val = label_encoder.transform(self.y_val)
-            # Save the label encoder to use for future infrences with the model. This will
-            # Let us map back to the original APT threat actor
-            joblib.dump(label_encoder, f'{config.get("ML_DATA")}{self.model_title}_label_encoder.joblib')
+                # Initialize the LabelEncoder
+                label_encoder = LabelEncoder()
+
+                # Fit the label encoder and transform y to ensure labels are continuous
+                y = label_encoder.fit_transform(y)
+
+                # First, split the data into training+validation and test sets (e.g., 80% train+val, 20% test)
+                X_train_val, self.X_test, y_train_val, self.y_test = train_test_split(X, y, test_size=0.2,
+                                                                                      random_state=42)
+
+                # Then, split the training+validation data into separate training and validation sets (e.g., 75% train, 25% val)
+                self.X_train, self.X_val, self.y_train, self.y_val = train_test_split(X_train_val, y_train_val,
+                                                                                      test_size=0.25, random_state=42)
+
 
     def save(self,
              model_title: str):
