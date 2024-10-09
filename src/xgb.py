@@ -149,12 +149,6 @@ class MultiAPT(XGBoostGPUClassifierAPT):
         self.process_data(select_classes=select_classes)
 
         num_classes = len(np.unique(self.y_train))
-        # self.y_train = np.argmax(self.y_train.values, axis=1)
-        # self.y_test = np.argmax(self.y_test.values, axis=1)
-        #sample_weights = compute_sample_weight(
-        #    class_weight='balanced',
-        #    y=self.y_train
-        #)
         classes = np.unique(self.y_train)
         weights = compute_class_weight(class_weight='balanced',
                                        classes=classes,
@@ -167,7 +161,7 @@ class MultiAPT(XGBoostGPUClassifierAPT):
         sample_weights = np.vectorize(class_weights_map.get)(self.y_train)
         self.dtrain = xgb.DMatrix(self.X_train, label=self.y_train, weight=sample_weights)
         self.dtest = xgb.DMatrix(self.X_test, label=self.y_test)
-        self.dval = xgb.DMatrix(self.X_test, label=self.y_test)
+        self.dval = xgb.DMatrix(self.X_val, label=self.y_val)
 
         # Modifying this is key in getting the best performance for our models. Ideally we want to get the search space
         # just right so that the optimization can find the true global min
@@ -192,149 +186,58 @@ class MultiAPT(XGBoostGPUClassifierAPT):
              max_evals=num_evals,
              trials=trials)
 
-        # y_pred = self.best_model.predict(self.dtest)
-        # y_pred_val = self.best_model.predict(self.dval)
-
-        # feature_names = list(self.X_train.columns)
-        # shap_values = self.best_model.predict(self.dtrain, pred_contribs=True)
-        # shap_values = shap_values[:, :, :-1]
-
-        # Assuming shap_values is your array of SHAP values with shape (341181, 24, 117)
-        # mean_abs_shap = np.mean(np.abs(shap_values), axis=(0, 1))
-
-        # Rank features based on mean absolute SHAP value
-        # ranked_indices = np.argsort(mean_abs_shap)[::-1]  # [::-1] is used to sort in descending order
-        # self.shap_dict = {feature_names[i]: mean_abs_shap[i] for i in ranked_indices}
-
     def objective(self, search_space: Dict):
-        # Train model using chosen search space
+        # Train the model using the chosen search space
         model = xgb.train(search_space,
                           self.dtrain, num_boost_round=75,
-                          evals=[(self.dval, 'val')],
+                          evals=[(self.dtest, 'val')],
                           early_stopping_rounds=10,
                           verbose_eval=False)
-        # Get predictions
-        y_pred = model.predict(self.dtest)
 
-        # Convert probabilities to class labels
-        y_pred_labels = np.argmax(y_pred, axis=1)
+        # Get predictions for the test set
+        y_pred_test = model.predict(self.dtest)
+        y_pred_labels_test = np.argmax(y_pred_test, axis=1)
 
-        # Now, calculate the balanced accuracy score. We choose to optimize on balanced accuracy
-        loss = balanced_accuracy_score(self.y_test, y_pred_labels)
-        acc = accuracy_score(self.y_test, y_pred_labels)
-        if self.best_metric < loss:
-            self.best_metric = loss
+        # Get predictions for the validation set
+        y_pred_val = model.predict(self.dval)
+        y_pred_labels_val = np.argmax(y_pred_val, axis=1)
+
+        # Get predictions for the training set
+        y_pred_train = model.predict(self.dtrain)
+        y_pred_labels_train = np.argmax(y_pred_train, axis=1)
+
+        # Calculate training, testing, and validation accuracy scores
+        loss_train = balanced_accuracy_score(self.y_train, y_pred_labels_train)
+        acc_train = accuracy_score(self.y_train, y_pred_labels_train)
+
+        loss_test = balanced_accuracy_score(self.y_test, y_pred_labels_test)
+        acc_test = accuracy_score(self.y_test, y_pred_labels_test)
+
+        loss_val = balanced_accuracy_score(self.y_val, y_pred_labels_val)
+        acc_val = accuracy_score(self.y_val, y_pred_labels_val)
+
+        # Update best model if the new model is better
+        if self.best_metric < loss_test:
+            self.best_metric = loss_test
             self.best_model = model
             self.save(model_title=self.model_title)
-            print("""
-            Current Best Metrics
-            ---------------------
-            ACC:    {acc:.4f}
-            BACC:   {bacc:.4f}
-            """.format(acc=acc, bacc=loss))
-        # Return the loss
-        return {'loss': 1 - loss, 'status': STATUS_OK}
 
-
-class BinaryAPT(XGBoostGPUClassifierAPT):
-    """
-    This class is trains a binary-classification XGBoost model for APT/Threat Actors
-    """
-
-    def train(self,
-              num_evals: int,
-              select_classes: list) -> None:
-        """
-        This method will train the models as follows:
-
-        1. Address class imbalance by weighting the minority classes higher through compute_sample_weight
-        2. Create DMatrix objects from training, test and validation sets
-        3. Create a search space (Tree Architecture) to optimize on using hypopt library using a metric of choice.
-        4. Define objective function to minimize (usually 1-{metric}) where metric range is [0,1].
-        5. Iterate num_evals until we find the best model based on our objective function.
-        6. Save best model
-
-        Args:
-            num_evals (int): Number of evaluations to go through optimization.
-            select_classes (list):
-        """
-        # Process data before training
-        self.process_data(select_classes=select_classes)
-        sample_weights = compute_sample_weight(
-                class_weight='balanced',
-                y=self.y_train
-            )
-        self.dtrain = xgb.DMatrix(self.X_train, label=self.y_train, weight=sample_weights)
-        self.dtest = xgb.DMatrix(self.X_test, label=self.y_test)
-        self.dval = xgb.DMatrix(self.X_test, label=self.y_test)
-
-        search_space = {
-            'objective': 'binary:logistic',
-            'learning_rate': hp.loguniform('learning_rate', -0.75, 0),
-            'max_depth': hp.choice('max_depth', range(1, 32)),
-            'min_child_weight': hp.choice('min_child_weight', range(1, 100)),
-            'gamma': hp.uniform('gamma', 0, 5),
-            'subsample': hp.uniform('subsample', 0.1, 1),  # Adjusted range to avoid 0 which is invalid
-            'colsample_bytree': hp.uniform('colsample_bytree', 0.1, 1),
-            # 'tree_method': 'gpu_hist', We have no GPU, but if we do, use this to use it
-            # 'predictor': 'gpu_predictor' We have no GPU, but if we do, use this to use it
-        }
-
-        trials = Trials()
-
-        fmin(fn=self.objective,
-             space=search_space,
-             algo=tpe.suggest,
-             max_evals=num_evals,
-             trials=trials)
-
-        # feature_names = list(self.X_train.columns)
-        # shap_values = self.best_model.predict(self.dtrain, pred_contribs=True)
-        # shap_values = shap_values[:, :, :-1]
-
-        # mean_abs_shap = np.mean(np.abs(shap_values), axis=(0, 1))
-
-        # Rank features based on mean absolute SHAP value
-        # ranked_indices = np.argsort(mean_abs_shap)[::-1]  # [::-1] is used to sort in descending order
-        # self.shap_dict = {feature_names[i]: mean_abs_shap[i] for i in ranked_indices}
-
-    def objective(self, search_space: Dict):
-        # Train model using chosen search space
-        model = xgb.train(search_space,
-                          self.dtrain, num_boost_round=75,
-                          evals=[(self.dtest, 'test')],
-                          early_stopping_rounds=10,
-                          verbose_eval=False)
-        # Get predictions
-        y_pred = model.predict(self.dtest)
-
-        # Convert probabilities to class labels using a threshold of 0.5
-        y_pred_labels = np.where(y_pred > 0.5, 1, 0)
-
-        # Now, calculate the balanced accuracy score. We choose to optimize on balanced accuracy
-        loss = balanced_accuracy_score(self.y_test, y_pred_labels)
-        acc = accuracy_score(self.y_test, y_pred_labels)
-        precision = precision_score(self.y_test, y_pred_labels, zero_division=0)
-        recall = recall_score(self.y_test, y_pred_labels, zero_division=0)
-        f1 = f1_score(self.y_test, y_pred_labels, zero_division=0)
-        auc = roc_auc_score(self.y_test, y_pred)
-        if self.best_metric < loss:
-            self.best_metric = loss
-            self.best_model = model
-            self.save(model_title=self.model_title)
+            # Print training, testing, and validation metrics
             print(f"""
             Current Best Metrics
             ---------------------
-            ACC:    {acc:.4f}
-            BACC:   {loss:.4f}
-            Precision: {precision:.4f}
-            Recall: {recall:.4f}
-            F1:     {f1:.4f}
-            AUC:    {auc:.4f}
-            """)
-        # Return the loss
-        return {'loss': 1 - loss, 'status': STATUS_OK}
+            Training Accuracy  (ACC):  {acc_train:.4f}
+            Training Balanced Accuracy (BACC):  {loss_train:.4f}
 
+            Testing Accuracy  (ACC):  {acc_test:.4f}
+            Testing Balanced Accuracy (BACC):  {loss_test:.4f}
+
+            Validation Accuracy  (ACC):  {acc_val:.4f}
+            Validation Balanced Accuracy (BACC):  {loss_val:.4f}
+            """)
+
+        # Return the loss for hyperparameter optimization
+        return {'loss': 1 - loss_test, 'status': STATUS_OK}
 
 if __name__ == '__main__':
     ################# Train on whole dataset############################################
@@ -343,25 +246,3 @@ if __name__ == '__main__':
              model_title=f"APT_XGBoost_domain_full",
              model_definition='pure_model',
              ioc_type='domains').train(num_evals=3000)
-    ##############################################################################################
-
-    ################# Train on classes in each Cluster############################################
-    import joblib
-
-    # load in cluster for each iocs type
-    domain_clusters = f"{config.get('ML_DATA')}domains_cluster_map.joblib"
-    domain_clusters_map = joblib.load(domain_clusters)
-    for cluster, select_classes in domain_clusters_map.items():
-        # Train Domain Classifier
-        # It the number of classes if more than 2, we use the multi calss model
-        if len(select_classes) > 2:
-            # MultiAPT(config=config, model_title=f"APT_XGBoost_domain_{cluster}").train(num_evals=1000,
-            #                                                                           select_classes=select_classes)
-            pass
-        elif len(select_classes) == 1:
-            continue
-        else:
-            # Other wise we can use a binary classifier
-            BinaryAPT(config=config, model_title=f"APT_XGBoost_domain_{cluster}").train(num_evals=200,
-                                                                                        select_classes=select_classes)
-    ##############################################################################################
