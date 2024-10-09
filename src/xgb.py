@@ -1,8 +1,6 @@
 """
-This module is used to train classifers 
+This module is used to train classifers on our misp data.
 """
-import json
-
 import pandas as pd
 import numpy as np
 import xgboost as xgb
@@ -10,14 +8,12 @@ from sklearn.utils.class_weight import compute_sample_weight, compute_class_weig
 from hyperopt import fmin, hp, STATUS_OK, tpe, Trials
 from sklearn.metrics import (accuracy_score, balanced_accuracy_score, precision_score, recall_score, f1_score,
                              roc_auc_score)
-from sklearn.model_selection import train_test_split
 from typing import Dict
+from sklearn.model_selection import train_test_split
+from config import config
 from pathlib import Path
-from sklearn.preprocessing import LabelEncoder
-from build_dataset.label_mapper.apt_label_mapper import build_ta_map as get_label_mapper
 import warnings
 from sklearn.exceptions import UndefinedMetricWarning
-from config import config 
 
 # Ignore the specific sklearn UndefinedMetricWarning
 warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
@@ -44,6 +40,7 @@ class Classifier:
         self.model_definition = model_definition
 
 
+
 class XGBoostGPUClassifierAPT(Classifier):
 
     def __init__(self,
@@ -61,39 +58,37 @@ class XGBoostGPUClassifierAPT(Classifier):
         self.best_model = None
         # Load in datasets
         ml_dir = Path(config.get('ML_DATA'))
-
-        # This is where we will load in the train/test/val data. This can differ from user to user
-
         if ioc_type == 'domains':
-            self.X_train = pd.read_csv(ml_dir / 'domains_features_train.csv', index_col='Unnamed: 0')
-            self.y_train = pd.read_csv(ml_dir / 'domains_labels_train.csv', index_col='Unnamed: 0')
-
-            self.X_test = pd.read_csv(ml_dir / 'domains_features_test.csv', index_col='Unnamed: 0')
-            self.y_test = pd.read_csv(ml_dir / 'domains_labels_test.csv', index_col='Unnamed: 0')
-
-            self.X_val = pd.read_csv(ml_dir / 'domains_features_val.csv', index_col='Unnamed: 0')
-            self.y_val = pd.read_csv(ml_dir / 'domains_labels_val.csv', index_col='Unnamed: 0')
+            X = np.load(ml_dir / 'trad_ml_preprocessed/domain_x.npy')
+            y = np.load(ml_dir / 'trad_ml_preprocessed/domain_y.npy')
 
         if ioc_type == 'ips':
-            ip_data = np.load(ml_dir / 'ips.npz')
-            X = ip_data['x']
-            y = ip_data['y']
+            X = np.load(ml_dir / 'trad_ml_preprocessed/ip_x.npy')
+            y = np.load(ml_dir / 'trad_ml_preprocessed/ip_y.npy')
 
-            # Initialize the LabelEncoder
-            label_encoder = LabelEncoder()
+        if ioc_type == 'urls':
+            X = np.load(ml_dir / 'trad_ml_preprocessed/url_x.npy')
+            y = np.load(ml_dir / 'trad_ml_preprocessed/url_y.npy')
 
-            # Fit the label encoder and transform y to ensure labels are continuous
-            y = label_encoder.fit_transform(y)
+        # Create a mask to filter out labels that are -1
+        mask = y != -1
 
-            # First, split the data into training+validation and test sets (e.g., 80% train+val, 20% test)
-            X_train_val, self.X_test, y_train_val, self.y_test = train_test_split(X, y, test_size=0.2,
-                                                                                  random_state=42)
+        # Apply the mask to X and y to drop instances where y == -1
+        X = X[mask]
+        y = y[mask]
 
-            # Then, split the training+validation data into separate training and validation sets (e.g., 75% train, 25% val)
-            self.X_train, self.X_val, self.y_train, self.y_val = train_test_split(X_train_val, y_train_val,
-                                                                                  test_size=0.25, random_state=42)
+        # Step 1: Split data into train + validation and test sets (e.g., 80% train+val, 20% test)
+        X_train_val, X_test, y_train_val, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-
+        # Step 2: Further split the train + validation set into separate training and validation sets (e.g., 75% train, 25% validation)
+        X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val, test_size=0.25, random_state=42)
+        # This gives use 60% training, 20% validation, and 20% test data
+        self.X_train = X_train
+        self.X_test = X_test
+        self.X_val = X_val
+        self.y_train = y_train
+        self.y_test = y_test
+        self.y_val = y_val
 
     def save(self,
              model_title: str):
@@ -114,14 +109,12 @@ class MultiAPT(XGBoostGPUClassifierAPT):
     This class is trains a multi-classification XGBoost model for APT/Threat Actors
     """
 
-    def train(self,
-              num_evals: int,
-              select_classes: list = []) -> None:
+    def train(self, num_evals: int, select_classes: list = [], num_folds: int = 5) -> None:
         """
-        This method will train the models as follows:
+        This method will train the models using K-fold cross-validation as follows:
 
         1. Address class imbalance by weighting the minority classes higher through compute_sample_weight
-        2. Create DMatrix objects from training, test and validation sets
+        2. Iterate over each fold, create DMatrix objects from training, test, and validation sets for that fold
         3. Create a search space (Tree Architecture) to optimize on using hypopt library using a metric of choice.
         4. Define objective function to minimize (usually 1-{metric}) where metric range is [0,1].
         5. Iterate num_evals until we find the best model based on our objective function.
@@ -129,47 +122,50 @@ class MultiAPT(XGBoostGPUClassifierAPT):
 
         Args:
             num_evals (int): Number of evaluations to go through optimization
+            num_folds (int): Number of folds to use in cross-validation (default: 5)
         """
-        # Process data before training
+        self.best_metric = 0  # Reset the best metric for new training runs
+
+
+        # Process data before training (e.g., address class imbalance)
         self.process_data(select_classes=select_classes)
 
         num_classes = len(np.unique(self.y_train))
         classes = np.unique(self.y_train)
         weights = compute_class_weight(class_weight='balanced',
-                                       classes=classes,
-                                       y=self.y_train.squeeze())
+                                           classes=classes,
+                                           y=self.y_train.squeeze())
 
-        # Map from class labels to computed class weights (for easier lookup)
+        # Create class weights for training samples
         class_weights_map = dict(zip(classes, weights))
-
-        # Efficiently create a sample weights array for each instance in y_train
         sample_weights = np.vectorize(class_weights_map.get)(self.y_train)
+
+        # Create XGBoost DMatrix for the current fold
         self.dtrain = xgb.DMatrix(self.X_train, label=self.y_train, weight=sample_weights)
         self.dtest = xgb.DMatrix(self.X_test, label=self.y_test)
         self.dval = xgb.DMatrix(self.X_val, label=self.y_val)
 
-        # Modifying this is key in getting the best performance for our models. Ideally we want to get the search space
-        # just right so that the optimization can find the true global min
+        # Define the search space for hyperparameter optimization
         search_space = {
-            'objective': 'multi:softprob',
-            'num_class': num_classes,
-            'learning_rate': hp.loguniform('learning_rate', -0.75, 0),
-            'max_depth': hp.choice('max_depth', range(1, 32)),
-            'min_child_weight': hp.choice('min_child_weight', range(1, 100)),
-            'gamma': hp.uniform('gamma', 0, 5),
-            'subsample': hp.uniform('subsample', 0, 1),
-            'colsample_bytree': hp.uniform('colsample_bytree', 0, 1),
-            # 'tree_method': 'gpu_hist', We have no GPU, but if we do, use this to use it
-            # 'predictor': 'gpu_predictor' We have no GPU, but if we do, use this to use it
-        }
+                'objective': 'multi:softprob',
+                'num_class': num_classes,
+                'learning_rate': hp.loguniform('learning_rate', -0.75, 0),
+                'max_depth': hp.choice('max_depth', range(1, 32)),
+                'min_child_weight': hp.choice('min_child_weight', range(1, 100)),
+                'gamma': hp.uniform('gamma', 0, 5),
+                'subsample': hp.uniform('subsample', 0, 1),
+                'colsample_bytree': hp.uniform('colsample_bytree', 0, 1),
+                # Use GPU if available: 'tree_method': 'gpu_hist', 'predictor': 'gpu_predictor'
+            }
 
         trials = Trials()
 
+        # Run hyperparameter optimization for the current fold
         fmin(fn=self.objective,
-             space=search_space,
-             algo=tpe.suggest,
-             max_evals=num_evals,
-             trials=trials)
+                 space=search_space,
+                 algo=tpe.suggest,
+                 max_evals=num_evals,
+                 trials=trials)
 
     def objective(self, search_space: Dict):
         # Train the model using the chosen search space
@@ -177,7 +173,7 @@ class MultiAPT(XGBoostGPUClassifierAPT):
                           self.dtrain, num_boost_round=75,
                           evals=[(self.dtest, 'val')],
                           early_stopping_rounds=10,
-                          verbose_eval=False)
+                          verbose_eval=True)
 
         # Get predictions for the test set
         y_pred_test = model.predict(self.dtest)
@@ -224,11 +220,23 @@ class MultiAPT(XGBoostGPUClassifierAPT):
         # Return the loss for hyperparameter optimization
         return {'loss': 1 - loss_test, 'status': STATUS_OK}
 
+
 if __name__ == '__main__':
     ################# Train on whole dataset############################################
-    # We can choose what data set to train on. Like ioc_type = ips, domains and urls.
-    # Can also set the number if evaluation steps num_evals. Can give any model name by setting model_title
+
+    # URLs
+    MultiAPT(config=config,
+             model_title=f"APT_XGBoost_url_full",
+             model_definition='pure_model',
+             ioc_type='urls').train(num_evals=3000)
+    # DOMAINS
     MultiAPT(config=config,
              model_title=f"APT_XGBoost_domain_full",
              model_definition='pure_model',
              ioc_type='domains').train(num_evals=3000)
+
+    #IPS
+    MultiAPT(config=config,
+             model_title=f"APT_XGBoost_ip_full",
+             model_definition='pure_model',
+             ioc_type='ips').train(num_evals=3000)
