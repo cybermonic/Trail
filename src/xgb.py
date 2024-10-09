@@ -44,55 +44,55 @@ class Classifier:
         self.model_definition = model_definition
 
 
-
 class XGBoostGPUClassifierAPT(Classifier):
-    class XGBoostGPUClassifierAPT(Classifier):
 
-        def __init__(self,
-                     config: Dict,
-                     ioc_type: str,
-                     model_definition: str,
-                     model_title: str = 'APT_XGBoost'):
-            super().__init__(config=config,
-                             model_title=model_title,
-                             ioc_type=ioc_type,
-                             model_definition=model_definition)
-            # During the optimization stage, we will keep track of the self.best_metric (We can choose this) and save the
-            # self.best_model with title self.model_title
-            self.best_metric = 0
-            self.best_model = None
-            # Load in datasets
-            ml_dir = Path(config.get('ML_DATA'))
+    def __init__(self,
+                 config: Dict,
+                 ioc_type: str,
+                 model_definition: str,
+                 model_title: str = 'APT_XGBoost'):
+        super().__init__(config=config,
+                         model_title=model_title,
+                         ioc_type=ioc_type,
+                         model_definition=model_definition)
+        # During the optimization stage, we will keep track of the self.best_metric (We can choose this) and save the
+        # self.best_model with title self.model_title
+        self.best_metric = 0
+        self.best_model = None
+        # Load in datasets
+        ml_dir = Path(config.get('ML_DATA'))
 
-            # This is where we will load in the train/test/val data. This can differ from user to user
-            if ioc_type == 'domains':
-                self.X_train = pd.read_csv(ml_dir / 'domains_features_train.csv', index_col='Unnamed: 0')
-                self.y_train = pd.read_csv(ml_dir / 'domains_labels_train.csv', index_col='Unnamed: 0')
+        # This is where we will load in the train/test/val data. This can differ from user to user
 
-                self.X_test = pd.read_csv(ml_dir / 'domains_features_test.csv', index_col='Unnamed: 0')
-                self.y_test = pd.read_csv(ml_dir / 'domains_labels_test.csv', index_col='Unnamed: 0')
+        if ioc_type == 'domains':
+            self.X_train = pd.read_csv(ml_dir / 'domains_features_train.csv', index_col='Unnamed: 0')
+            self.y_train = pd.read_csv(ml_dir / 'domains_labels_train.csv', index_col='Unnamed: 0')
 
-                self.X_val = pd.read_csv(ml_dir / 'domains_features_val.csv', index_col='Unnamed: 0')
-                self.y_val = pd.read_csv(ml_dir / 'domains_labels_val.csv', index_col='Unnamed: 0')
+            self.X_test = pd.read_csv(ml_dir / 'domains_features_test.csv', index_col='Unnamed: 0')
+            self.y_test = pd.read_csv(ml_dir / 'domains_labels_test.csv', index_col='Unnamed: 0')
 
-            if ioc_type == 'ips':
-                ip_data = np.load(ml_dir / 'ips.npz')
-                X = ip_data['x']
-                y = ip_data['y']
+            self.X_val = pd.read_csv(ml_dir / 'domains_features_val.csv', index_col='Unnamed: 0')
+            self.y_val = pd.read_csv(ml_dir / 'domains_labels_val.csv', index_col='Unnamed: 0')
 
-                # Initialize the LabelEncoder
-                label_encoder = LabelEncoder()
+        if ioc_type == 'ips':
+            ip_data = np.load(ml_dir / 'ips.npz')
+            X = ip_data['x']
+            y = ip_data['y']
 
-                # Fit the label encoder and transform y to ensure labels are continuous
-                y = label_encoder.fit_transform(y)
+            # Initialize the LabelEncoder
+            label_encoder = LabelEncoder()
 
-                # First, split the data into training+validation and test sets (e.g., 80% train+val, 20% test)
-                X_train_val, self.X_test, y_train_val, self.y_test = train_test_split(X, y, test_size=0.2,
-                                                                                      random_state=42)
+            # Fit the label encoder and transform y to ensure labels are continuous
+            y = label_encoder.fit_transform(y)
 
-                # Then, split the training+validation data into separate training and validation sets (e.g., 75% train, 25% val)
-                self.X_train, self.X_val, self.y_train, self.y_val = train_test_split(X_train_val, y_train_val,
-                                                                                      test_size=0.25, random_state=42)
+            # First, split the data into training+validation and test sets (e.g., 80% train+val, 20% test)
+            X_train_val, self.X_test, y_train_val, self.y_test = train_test_split(X, y, test_size=0.2,
+                                                                                  random_state=42)
+
+            # Then, split the training+validation data into separate training and validation sets (e.g., 75% train, 25% val)
+            self.X_train, self.X_val, self.y_train, self.y_val = train_test_split(X_train_val, y_train_val,
+                                                                                  test_size=0.25, random_state=42)
+
 
 
     def save(self,
@@ -226,7 +226,8 @@ class MultiAPT(XGBoostGPUClassifierAPT):
 
 if __name__ == '__main__':
     ################# Train on whole dataset############################################
-
+    # We can choose what data set to train on. Like ioc_type = ips, domains and urls.
+    # Can also set the number if evaluation steps num_evals. Can give any model name by setting model_title
     MultiAPT(config=config,
              model_title=f"APT_XGBoost_domain_full",
              model_definition='pure_model',
