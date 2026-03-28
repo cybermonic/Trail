@@ -76,3 +76,13 @@ The `src/` directory contains files on the top level to train, evaluate, and exp
 <h3 align="center">Figure 2: GNN model archetecture</h3>
 
 This directory contains the source code for the GNN, the autoencoder, and the IOC DNN. The GNN model takes the TKG and directory containing the CSV files as input, and outputs predictions for events when given their node IDs. The IOC DNN uses the dense matrices stored in `ML_DATA.zip`.
+
+## Cite
+    @inproceedings{king2025trail,
+      title={Trail: A knowledge graph-based approach for attributing advanced persistent threats},
+      author={King, Isaiah J and Ramirez, Ramiro and Bowman, Benjamin and Huang, H Howie},
+      booktitle={2025 IEEE 41st International Conference on Data Engineering (ICDE)},
+      pages={1207--1220},
+      year={2025},
+      organization={IEEE}
+    }
